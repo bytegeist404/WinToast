@@ -1,21 +1,12 @@
 # WinToast
 
-## Overview
+A lightweight notifier that checks for WinGet updates when you log in to Windows and shows a toast notification with a one-click **Update All**. No background service, no silent auto-updates — just a reminder, on your terms.
 
-This project is a lightweight PowerShell script that runs when the user logs into Windows and checks for software updates using **WinGet**. If one or more packages have updates available, it displays a Windows toast notification (via **BurntToast**) listing the packages, with an **Update All** button to install every available update.
+## What it does
 
-The goal is to provide a simple, non-intrusive reminder that updates are available without automatically installing them.
-
----
-
-## Features
-
-- Checks installed WinGet packages for available updates via `Get-WinGetPackage`.
-- Displays a toast notification only when updates are available.
-- Shows the number of packages that can be updated and lists their names.
-- **Update All** button on the notification runs `winget upgrade --all` elevated, after a single UAC prompt, so individual packages don't each pop their own admin/installer prompt; the window closes itself on success and stays open (with the error shown) if anything fails.
-- Installs itself: `install.ps1` registers a Scheduled Task that runs the check at logon, so there's nothing to set up by hand in Task Scheduler.
-- Installs with a single `irm | iex` command, no git clone or separate installer file required. Shows up in Settings > Apps / `winget uninstall` for easy removal.
+- Checks your installed WinGet packages for updates at every logon.
+- Shows a toast only when updates are actually available, listing the package names.
+- **Update All** installs everything with one click: a single admin prompt, then it runs silently and closes itself when done (or stays open if something failed).
 
 Example notification:
 
@@ -29,132 +20,39 @@ RipGrep MSVC
 [Update All]
 ```
 
----
-
 ## Requirements
 
-- Windows 10 or Windows 11
-- WinGet
-- PowerShell 5.1 or PowerShell 7+
-- **BurntToast** and **Microsoft.WinGet.Client** PowerShell modules
+- Windows 10 or 11 with WinGet
+- PowerShell 5.1+ (already on Windows) or PowerShell 7+
 
-`toast.ps1` declares both modules with `#Requires -Modules`, so PowerShell refuses to run it (with a clear error naming what's missing) if either isn't installed. `install.ps1` installs them for you, or you can do it manually:
+Everything else it needs (the BurntToast and Microsoft.WinGet.Client modules) is installed automatically.
 
-```powershell
-Install-Module BurntToast -Scope CurrentUser
-Install-Module Microsoft.WinGet.Client -Scope CurrentUser
-```
-
----
-
-## Installation
-
-The one-liner installs WinToast with no git clone and no separate installer artifact — it just runs `install.ps1` straight from GitHub:
+## Install
 
 ```powershell
 irm https://raw.githubusercontent.com/bytegeist404/WinToast/v1.0.0/install.ps1 | iex
 ```
 
-`install.ps1`:
+That's it — WinToast will check for updates at your next logon. This pipes a script straight from this repo into PowerShell; if you'd rather look before running it, clone the repo and run `./install.ps1` instead, which does the same thing locally.
 
-1. Installs the BurntToast and Microsoft.WinGet.Client modules if they're missing.
-2. Downloads `toast.ps1`, `run-hidden.vbs`, and `uninstall.ps1` to `%LOCALAPPDATA%\WinToast\` (from a local checkout instead, if you're running it via `./install.ps1` after a `git clone`).
-3. Registers a Scheduled Task (`WinToast`) that runs `run-hidden.vbs` (which launches `toast.ps1` with no visible window) at your next logon.
-4. Registers an Add/Remove Programs entry, so it also shows up in Settings > Apps and can be removed with `winget uninstall WinToast` (see below) as well as `uninstall.ps1`.
-
-It's safe to re-run — it overwrites the installed copy and re-registers the task, so re-running the one-liner (or `./install.ps1` from an updated checkout) is how you pick up changes.
-
-To check for updates immediately instead of waiting for your next login:
+To check for updates right now instead of waiting for your next logon:
 
 ```powershell
 & "$env:LOCALAPPDATA\WinToast\toast.ps1"
 ```
 
-Piping a remote script into `iex` means you're trusting this repo not to serve anything malicious — reasonable for a small, single-maintainer open-source tool, but read `install.ps1` first if you want to verify that yourself. If you'd rather not run it sight-unseen, clone the repo and run `./install.ps1` locally instead; it behaves identically.
+Re-running the install command is also how you pick up new versions later.
 
-#### Releasing a new version
+## Uninstall
 
-1. Bump `$wintoastVersion` and `$ref` at the top of `install.ps1` to the new version.
-2. Commit, then `git tag v<version>` and push both.
-
-No build step, no artifacts to upload.
-
-### Uninstall
-
-```powershell
-& "$env:LOCALAPPDATA\WinToast\uninstall.ps1"
-```
-
-or, without a local copy:
-
-```powershell
-irm https://raw.githubusercontent.com/bytegeist404/WinToast/v1.0.0/uninstall.ps1 | iex
-```
-
-or via winget or Settings > Apps, since both discover WinToast through the Add/Remove Programs entry `install.ps1` registers:
+Any of the following:
 
 ```powershell
 winget uninstall WinToast
 ```
 
-All remove the scheduled task, the `Update All` protocol handler, the Add/Remove Programs entry, and the installed copy of the script. They leave the BurntToast/Microsoft.WinGet.Client modules in place in case other scripts use them.
-
----
-
-## How it works
-
-1. The scheduled task runs `run-hidden.vbs`, a small VBScript wrapper that launches `toast.ps1` via `WScript.Shell.Run(..., 0, False)`. This hides the console window at process creation, which is more reliable than passing `powershell.exe -WindowStyle Hidden` directly -- that flag is ignored on Windows 11 when Windows Terminal is set as the default terminal app, leaving a visible window at logon.
-2. `Get-WinGetPackage` (from `Microsoft.WinGet.Client`) lists installed packages; ones with `IsUpdateAvailable -eq $true` become the notification's package list.
-3. If any are found, `New-BurntToastNotification` shows the count and names, plus an "Update All" button.
-4. Clicking that button needs to work even though `toast.ps1` has already exited by the time you click it — so instead of BurntToast's `-ActivatedAction` (which only works while the triggering process is still alive), the script registers a `wintoast:` custom URI protocol handler under `HKCU\Software\Classes` (no admin rights needed). The button's `-ActivationType Protocol` triggers that handler, which launches a non-elevated PowerShell process that immediately relaunches itself elevated via `Start-Process -Verb RunAs` — a single UAC prompt — and the elevated process runs `winget upgrade --all --silent --accept-package-agreements --accept-source-agreements`. Running it elevated means individual packages whose installers require admin rights install silently under that token instead of each popping their own prompt.
-5. That upgrade window closes itself automatically if the upgrade succeeds, and stays open with the error printed if it doesn't.
-
----
-
-## Technologies
-
-- **PowerShell**
-- **WinGet**
-- **BurntToast** PowerShell module
-- **Microsoft.WinGet.Client** PowerShell module
-- **Windows Task Scheduler** (registered automatically by `install.ps1`)
-
----
-
-## Testing
-
-To test the notification logic without waiting for a real update:
-
-1. Install an older version of a package from WinGet:
-
 ```powershell
-winget show BurntSushi.ripgrep.MSVC --versions
-winget install BurntSushi.ripgrep.MSVC --version 13.0.0
+& "$env:LOCALAPPDATA\WinToast\uninstall.ps1"
 ```
 
-2. Verify that it appears as upgradeable:
-
-```powershell
-winget upgrade
-```
-
-3. Run the script directly and confirm the toast appears with the package listed:
-
-```powershell
-& "$env:LOCALAPPDATA\WinToast\toast.ps1"
-```
-
----
-
-## Future Improvements
-
-- Display package icons in notifications where available.
-- Ignore selected packages using a configurable exclusion list.
-- Log update history to a text or JSON file.
-- Include packages with unknown versions as an optional setting.
-
----
-
-## Project Goal
-
-Provide a simple, fast, and lightweight reminder that software updates are available without introducing unnecessary background services or automatic updates.
+Or remove it from **Settings > Apps** like any other program.
