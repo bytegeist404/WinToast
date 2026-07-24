@@ -15,7 +15,7 @@ The goal is to provide a simple, non-intrusive reminder that updates are availab
 - Shows the number of packages that can be updated and lists their names.
 - **Update All** button on the notification runs `winget upgrade --all`; the window closes itself on success and stays open (with the error shown) if anything fails.
 - Installs itself: `install.ps1` registers a Scheduled Task that runs the check at logon, so there's nothing to set up by hand in Task Scheduler.
-- Installable via a local winget manifest, and shows up in Settings > Apps / `winget uninstall` for easy removal.
+- Installs with a single `irm | iex` command, no git clone or separate installer file required. Shows up in Settings > Apps / `winget uninstall` for easy removal.
 
 Example notification:
 
@@ -49,20 +49,20 @@ Install-Module Microsoft.WinGet.Client -Scope CurrentUser
 
 ## Installation
 
+The one-liner installs WinToast with no git clone and no separate installer artifact — it just runs `install.ps1` straight from GitHub:
+
 ```powershell
-git clone <this-repo-url>
-cd WinToast
-./install.ps1
+irm https://raw.githubusercontent.com/bytegeist404/WinToast/v1.0.0/install.ps1 | iex
 ```
 
 `install.ps1`:
 
 1. Installs the BurntToast and Microsoft.WinGet.Client modules if they're missing.
-2. Copies `toast.ps1`, `run-hidden.vbs`, and `uninstall.ps1` to `%LOCALAPPDATA%\WinToast\`.
+2. Downloads `toast.ps1`, `run-hidden.vbs`, and `uninstall.ps1` to `%LOCALAPPDATA%\WinToast\` (from a local checkout instead, if you're running it via `./install.ps1` after a `git clone`).
 3. Registers a Scheduled Task (`WinToast`) that runs `run-hidden.vbs` (which launches `toast.ps1` with no visible window) at your next logon.
 4. Registers an Add/Remove Programs entry, so it also shows up in Settings > Apps and can be removed with `winget uninstall WinToast` (see below) as well as `uninstall.ps1`.
 
-It's safe to re-run — it overwrites the copy and re-registers the task, so pulling repo updates and re-running `install.ps1` is how you pick up changes.
+It's safe to re-run — it overwrites the installed copy and re-registers the task, so re-running the one-liner (or `./install.ps1` from an updated checkout) is how you pick up changes.
 
 To check for updates immediately instead of waiting for your next login:
 
@@ -70,43 +70,34 @@ To check for updates immediately instead of waiting for your next login:
 & "$env:LOCALAPPDATA\WinToast\toast.ps1"
 ```
 
-### Install via winget (local manifest)
+Piping a remote script into `iex` means you're trusting this repo not to serve anything malicious — reasonable for a small, single-maintainer open-source tool, but read `install.ps1` first if you want to verify that yourself. If you'd rather not run it sight-unseen, clone the repo and run `./install.ps1` locally instead; it behaves identically.
 
-winget can't install directly from a git repo, but a local manifest lets you install without adding any source or publishing anywhere public:
+#### Releasing a new version
 
-```powershell
-git clone <this-repo-url>
-cd WinToast
-winget install --manifest .\winget\manifests\b\bytegeist404\WinToast\1.0.0\
-```
+1. Bump `$wintoastVersion` and `$ref` at the top of `install.ps1` to the new version.
+2. Commit, then `git tag v<version>` and push both.
 
-`winget upgrade` won't discover new versions on its own, since a local manifest isn't tied to any source it can poll — apply a newer version yourself once it exists:
-
-```powershell
-winget upgrade --manifest .\winget\manifests\b\bytegeist404\WinToast\<new-version>\
-```
-
-#### Releasing a new winget version
-
-1. Copy `winget\manifests\b\bytegeist404\WinToast\1.0.0\` to a new `<version>` folder and bump `PackageVersion`/`DisplayVersion` in all three files.
-2. `winget\build.ps1 -Version <version>` — compiles `install.ps1` into an exe (stamping its `$wintoastVersion` with `<version>` so the Add/Remove Programs entry matches) and packages `dist\WinToast-<version>.zip`, printing its SHA256.
-3. Upload that zip as a GitHub Release asset tagged `v<version>`.
-4. Fill the release's asset URL and the printed SHA256 into the new folder's `bytegeist404.WinToast.installer.yaml`.
-5. `winget validate --manifest .\winget\manifests\b\bytegeist404\WinToast\<version>\`, then `winget upgrade --manifest ...` to apply it.
+No build step, no artifacts to upload.
 
 ### Uninstall
 
 ```powershell
-./uninstall.ps1
+& "$env:LOCALAPPDATA\WinToast\uninstall.ps1"
 ```
 
-or, if installed via winget:
+or, without a local copy:
+
+```powershell
+irm https://raw.githubusercontent.com/bytegeist404/WinToast/v1.0.0/uninstall.ps1 | iex
+```
+
+or via winget or Settings > Apps, since both discover WinToast through the Add/Remove Programs entry `install.ps1` registers:
 
 ```powershell
 winget uninstall WinToast
 ```
 
-Both remove the scheduled task, the `Update All` protocol handler, the Add/Remove Programs entry, and the installed copy of the script. They leave the BurntToast/Microsoft.WinGet.Client modules in place in case other scripts use them.
+All remove the scheduled task, the `Update All` protocol handler, the Add/Remove Programs entry, and the installed copy of the script. They leave the BurntToast/Microsoft.WinGet.Client modules in place in case other scripts use them.
 
 ---
 
@@ -127,7 +118,6 @@ Both remove the scheduled task, the `Update All` protocol handler, the Add/Remov
 - **BurntToast** PowerShell module
 - **Microsoft.WinGet.Client** PowerShell module
 - **Windows Task Scheduler** (registered automatically by `install.ps1`)
-- **ps2exe** PowerShell module (build-time only, used by `winget/build.ps1` to compile `install.ps1` into an exe for the winget package)
 
 ---
 
