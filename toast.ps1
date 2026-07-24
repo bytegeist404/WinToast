@@ -4,10 +4,12 @@
 # Checks for WinGet package updates and shows a toast notification if any are found.
 #
 # The notification includes an "Update All" button that runs `winget upgrade --all`
-# in a visible PowerShell window. Buttons need a registered custom URI protocol to
-# work, because this script exits right after showing the toast and the button may
-# be clicked long after that -- BurntToast's -ActivatedAction only works while the
-# creating process is still alive, so it can't be used here.
+# elevated, in a visible PowerShell window, after a single UAC prompt -- see the
+# comment above $elevateScript below for why it needs to be elevated at all. Buttons
+# need a registered custom URI protocol to work, because this script exits right
+# after showing the toast and the button may be clicked long after that --
+# BurntToast's -ActivatedAction only works while the creating process is still
+# alive, so it can't be used here.
 #
 # Dependencies (enforced by the #Requires statements above; PowerShell refuses
 # to run this script if either is missing):
@@ -19,13 +21,15 @@ $ErrorActionPreference = 'Stop'
 Import-Module BurntToast
 Import-Module Microsoft.WinGet.Client
 
-# Register (or refresh) the "Update All" protocol handler, per-user, no admin required.
-# The window closes automatically on success; on failure it prints the error and
-# waits for a keypress so it stays open for review. The script is passed via
-# -EncodedCommand (base64) rather than -Command, so its quotes don't collide with
-# the registry command-line's own quoting.
+# Register (or refresh) the "Update All" protocol handler, per-user, no admin required
+# to register -- elevation happens per click instead, below. The upgrade window
+# closes automatically on success; on failure it prints the error and waits for a
+# keypress so it stays open for review. Scripts are passed via -EncodedCommand
+# (base64) rather than -Command, so their quotes don't collide with the registry
+# command-line's own quoting, or with the elevated relaunch's -ArgumentList quoting.
 $protocolScheme = 'wintoast'
 $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+
 $upgradeScript = @'
 winget upgrade --all --silent --accept-package-agreements --accept-source-agreements
 if ($LASTEXITCODE -ne 0) {
@@ -35,7 +39,19 @@ if ($LASTEXITCODE -ne 0) {
 }
 '@
 $encodedUpgradeScript = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($upgradeScript))
-$handlerCommand = '"{0}" -NoProfile -EncodedCommand {1}' -f $powershellPath, $encodedUpgradeScript
+
+# winget upgrade --all runs elevated so that packages whose installers require admin
+# rights don't each pop their own separate UAC/installer prompt -- once the parent
+# process already holds an admin token, winget installs them under it silently
+# instead. Clicking a toast button only ever gets a non-elevated process (that's all
+# ShellExecute-ing a protocol handler can give you), so this wrapper's only job is to
+# immediately relaunch itself elevated via Start-Process -Verb RunAs, trading N
+# per-package prompts for exactly one UAC consent prompt.
+$elevateScript = @"
+Start-Process -FilePath '$powershellPath' -Verb RunAs -ArgumentList '-NoProfile', '-EncodedCommand', '$encodedUpgradeScript'
+"@
+$encodedElevateScript = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($elevateScript))
+$handlerCommand = '"{0}" -NoProfile -WindowStyle Hidden -EncodedCommand {1}' -f $powershellPath, $encodedElevateScript
 
 $classKey = "HKCU:\Software\Classes\$protocolScheme"
 New-Item -Path $classKey -Force -Value 'URL:WinGet Upgrade Notifier Protocol' | Out-Null

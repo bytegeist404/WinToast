@@ -13,7 +13,7 @@ The goal is to provide a simple, non-intrusive reminder that updates are availab
 - Checks installed WinGet packages for available updates via `Get-WinGetPackage`.
 - Displays a toast notification only when updates are available.
 - Shows the number of packages that can be updated and lists their names.
-- **Update All** button on the notification runs `winget upgrade --all`; the window closes itself on success and stays open (with the error shown) if anything fails.
+- **Update All** button on the notification runs `winget upgrade --all` elevated, after a single UAC prompt, so individual packages don't each pop their own admin/installer prompt; the window closes itself on success and stays open (with the error shown) if anything fails.
 - Installs itself: `install.ps1` registers a Scheduled Task that runs the check at logon, so there's nothing to set up by hand in Task Scheduler.
 - Installs with a single `irm | iex` command, no git clone or separate installer file required. Shows up in Settings > Apps / `winget uninstall` for easy removal.
 
@@ -106,7 +106,7 @@ All remove the scheduled task, the `Update All` protocol handler, the Add/Remove
 1. The scheduled task runs `run-hidden.vbs`, a small VBScript wrapper that launches `toast.ps1` via `WScript.Shell.Run(..., 0, False)`. This hides the console window at process creation, which is more reliable than passing `powershell.exe -WindowStyle Hidden` directly -- that flag is ignored on Windows 11 when Windows Terminal is set as the default terminal app, leaving a visible window at logon.
 2. `Get-WinGetPackage` (from `Microsoft.WinGet.Client`) lists installed packages; ones with `IsUpdateAvailable -eq $true` become the notification's package list.
 3. If any are found, `New-BurntToastNotification` shows the count and names, plus an "Update All" button.
-4. Clicking that button needs to work even though `toast.ps1` has already exited by the time you click it — so instead of BurntToast's `-ActivatedAction` (which only works while the triggering process is still alive), the script registers a `wintoast:` custom URI protocol handler under `HKCU\Software\Classes` (no admin rights needed). The button's `-ActivationType Protocol` triggers that handler, which launches a fresh PowerShell process running `winget upgrade --all --silent --accept-package-agreements --accept-source-agreements`.
+4. Clicking that button needs to work even though `toast.ps1` has already exited by the time you click it — so instead of BurntToast's `-ActivatedAction` (which only works while the triggering process is still alive), the script registers a `wintoast:` custom URI protocol handler under `HKCU\Software\Classes` (no admin rights needed). The button's `-ActivationType Protocol` triggers that handler, which launches a non-elevated PowerShell process that immediately relaunches itself elevated via `Start-Process -Verb RunAs` — a single UAC prompt — and the elevated process runs `winget upgrade --all --silent --accept-package-agreements --accept-source-agreements`. Running it elevated means individual packages whose installers require admin rights install silently under that token instead of each popping their own prompt.
 5. That upgrade window closes itself automatically if the upgrade succeeds, and stays open with the error printed if it doesn't.
 
 ---
