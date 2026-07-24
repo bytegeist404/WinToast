@@ -44,7 +44,7 @@
 
     $installDir = Join-Path $env:LOCALAPPDATA 'WinToast'
     $installedScript = Join-Path $installDir 'toast.ps1'
-    $installedLauncher = Join-Path $installDir 'run-hidden.vbs'a
+    $installedLauncher = Join-Path $installDir 'run-hidden.vbs'
     $installedUninstaller = Join-Path $installDir 'uninstall.ps1'
     $taskName = 'WinToast'
     $wscriptPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
