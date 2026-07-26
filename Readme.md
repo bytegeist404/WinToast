@@ -40,7 +40,7 @@ It'll still show up in the notification when an update is available -- only the 
 ## Install
 
 ```powershell
-irm https://raw.githubusercontent.com/bytegeist404/WinToast/v1.0.0/install.ps1 | iex
+irm https://raw.githubusercontent.com/bytegeist404/WinToast/v1.1.0/install.ps1 | iex
 ```
 
 That's it — WinToast will check for updates at your next logon. This pipes a script straight from this repo into PowerShell; if you'd rather look before running it, clone the repo and run `./install.ps1` instead, which does the same thing locally.
