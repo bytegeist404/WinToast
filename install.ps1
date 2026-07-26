@@ -33,8 +33,8 @@
     # DisplayVersion for the Add/Remove Programs entry, and the git tag sibling
     # files are downloaded from when running with no local checkout. Bump both
     # together and tag the release commit to match $ref.
-    $wintoastVersion = '1.1.0'
-    $ref = 'v1.1.0'
+    $wintoastVersion = '1.1.1'
+    $ref = 'v1.1.1'
     $repoRawBase = "https://raw.githubusercontent.com/bytegeist404/WinToast/$ref"
 
     # True only when this script is actually running from a .ps1 file (a local
