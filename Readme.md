@@ -35,7 +35,7 @@ To keep a package out of **Update All** (for example, one you'd rather update by
 Microsoft.WSL
 ```
 
-It'll still show up in the notification when an update is available -- only the automatic install is skipped.
+It's skipped by both the notification and **Update All** for as long as it stays listed -- remove the line to have WinToast pick it back up.
 
 ## Install
 
