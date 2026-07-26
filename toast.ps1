@@ -11,6 +11,9 @@
 # BurntToast's -ActivatedAction only works while the creating process is still
 # alive, so it can't be used here.
 #
+# Package IDs listed in exclude.txt, next to this script, are skipped by "Update
+# All" -- see the comment above $excludeFilePath below for how.
+#
 # Dependencies (enforced by the #Requires statements above; PowerShell refuses
 # to run this script if either is missing):
 #   Install-Module BurntToast -Scope CurrentUser
@@ -30,11 +33,42 @@ Import-Module Microsoft.WinGet.Client
 $protocolScheme = 'wintoast'
 $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
-$upgradeScript = @'
-winget upgrade --all --silent --accept-package-agreements --accept-source-agreements
-if ($LASTEXITCODE -ne 0) {
+# Packages listed here (one WinGet package ID per line, '#' comments allowed) are
+# pinned --blocking right before the upgrade runs and unpinned right after, so
+# `winget upgrade --all` skips them for just this one run instead of permanently --
+# they're still reported as having an update available next time this script checks.
+# $excludeFilePath is spliced into $upgradeScript as a literal string below because
+# the elevated process it runs in has no $PSScriptRoot of its own (it's launched via
+# -EncodedCommand, not -File).
+$excludeFilePath = Join-Path $PSScriptRoot 'exclude.txt'
+
+$upgradeScript = @"
+`$excludeFilePath = '$excludeFilePath'
+"@ + @'
+
+$excludedIds = @()
+if (Test-Path $excludeFilePath) {
+    $excludedIds = Get-Content -Path $excludeFilePath |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -and -not $_.StartsWith('#') }
+}
+
+foreach ($id in $excludedIds) {
+    winget pin add --id $id --exact --blocking
+}
+
+try {
+    winget upgrade --all --silent --accept-package-agreements --accept-source-agreements
+    $exitCode = $LASTEXITCODE
+} finally {
+    foreach ($id in $excludedIds) {
+        winget pin remove --id $id --exact
+    }
+}
+
+if ($exitCode -ne 0) {
     Write-Host ""
-    Write-Host "Upgrade finished with errors (exit code $LASTEXITCODE)." -ForegroundColor Red
+    Write-Host "Upgrade finished with errors (exit code $exitCode)." -ForegroundColor Red
     Read-Host "Press Enter to close this window"
 }
 '@

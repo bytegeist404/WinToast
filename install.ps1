@@ -127,6 +127,23 @@
         Unblock-File -Path $installedScript, $installedLauncher, $installedUninstaller -ErrorAction Stop
         Write-Host '      Installed toast.ps1, run-hidden.vbs, and uninstall.ps1.'
 
+        # User-editable, so it's only seeded once -- re-running install.ps1 (e.g. to
+        # pick up a new version) must never overwrite whatever the user has since
+        # written into it.
+        $installedExcludeFile = Join-Path $installDir 'exclude.txt'
+        if (-not (Test-Path $installedExcludeFile)) {
+            Write-Host '      Creating exclude.txt...'
+            @'
+# WinGet package IDs listed here are skipped by "Update All", one per line.
+# Lines starting with '#' are comments and blank lines are ignored. Find a
+# package's ID with `winget upgrade`.
+#
+# Example:
+# Microsoft.WSL
+'@ | Set-Content -Path $installedExcludeFile -Encoding utf8 -ErrorAction Stop
+            Write-Host '      Created exclude.txt.'
+        }
+
         Write-Host "[4/5] Registering scheduled task '$taskName'..."
         # Launched via wscript.exe rather than powershell.exe directly: powershell's own
         # -WindowStyle Hidden flag is unreliable on Windows 11 when Windows Terminal is set

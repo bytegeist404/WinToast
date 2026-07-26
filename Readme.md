@@ -27,6 +27,16 @@ RipGrep MSVC
 
 Everything else it needs (the BurntToast and Microsoft.WinGet.Client modules) is installed automatically.
 
+## Skipping packages
+
+To keep a package out of **Update All** (for example, one you'd rather update by hand), add its WinGet package ID on its own line in `$env:LOCALAPPDATA\WinToast\exclude.txt`:
+
+```text
+Microsoft.WSL
+```
+
+It'll still show up in the notification when an update is available -- only the automatic install is skipped.
+
 ## Install
 
 ```powershell
